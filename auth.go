@@ -7,41 +7,86 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"bufio"
+	"os"
+	"syscall"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 const (
-	HTTP  = "http"
 	HTTPS = "https"
+	ACCESS_TOKEN = "access_token"
 )
 
 type TokenRequest struct {
-	User     *string
-	Password *string
+	User     string
+	Password string
 	Realm    *string
 	Scopes   []string
 }
 
-type Authentication struct {
+type Authentication interface {
+	Enrich(*http.Request)
+}
+
+type Authenticator interface {
+	Authenticate() (Authentication, error)
+}
+
+type BearerTokenAuthentication struct {
+	token *string
+}
+
+func (auth BearerTokenAuthentication) Enrich(req *http.Request) {
+	if auth.token != nil {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", auth.token))
+	}
+}
+
+type OAuth2Authenticator struct {
 	url string
 }
 
-func NewAuthentication(url string) *Authentication {
-	return &Authentication{url: url}
+func NewOAuth2Authenticator(url string) Authenticator {
+	return &OAuth2Authenticator{url: url}
 }
 
-func NewTokenRequest(user string, password string, scopes ...string) TokenRequest {
-	return TokenRequest{User: &user, Password: &password, Scopes: scopes}
+func (auth *OAuth2Authenticator) Authenticate() (Authentication, error) {
+	// TODO implement credentials
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter user name: ")
+	user, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	fmt.Print("Enter password: ")
+	password, err := terminal.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println()
+
+	req := TokenRequest{User: user, Password: string(password), Scopes: []string{"uid"}}
+	token, err := auth.RequestToken(req)
+	if err != nil {
+		return nil, err
+	}
+	return &BearerTokenAuthentication{token: token}, nil
 }
 
-func (auth *Authentication) RequestToken(tokReq TokenRequest) (*string, error) {
+func (auth *OAuth2Authenticator) RequestToken(tokReq TokenRequest) (*string, error) {
 
 	url, err := buildTokenUrl(auth.url, tokReq)
+	if err != nil {
+		return nil, err
+	}
 	token, err := requestTokenInfo(url, tokReq)
 	if err != nil {
 		return nil, err
 	}
 
-	if val, exists := token["access_token"]; exists {
+	if val, exists := token[ACCESS_TOKEN]; exists {
 		access_token := val.(string)
 		return &access_token, nil
 	}
@@ -57,7 +102,7 @@ func requestTokenInfo(url *url.URL, tokReq TokenRequest) (map[string]interface{}
 		return nil, err
 	}
 
-	req.SetBasicAuth(*tokReq.User, *tokReq.Password)
+	req.SetBasicAuth(tokReq.User, tokReq.Password)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

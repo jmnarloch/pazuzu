@@ -1,10 +1,10 @@
 package main
 
 import (
-	"testing"
-	"net/http/httptest"
-	"net/http"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 )
 
 const (
@@ -55,4 +55,3 @@ func TestFailToGetToken(t *testing.T) {
 		t.Errorf("should have failed")
 	}
 }
-

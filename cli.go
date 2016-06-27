@@ -32,13 +32,17 @@ var buildCmd = cli.Command{
 			Name:  "dry-run",
 			Usage: "Show resulting Dockerfile without building image",
 		},
+		cli.BoolFlag{
+			Name:  "authenticate",
+			Usage: "Authenticates the user against the configured OAuth2 provider",
+		},
 	},
 }
 
 // Fetches and builds features into a docker image.
 func buildFeatures(c *cli.Context) error {
 	pazuzu := Pazuzu{
-		registry:       HttpRegistry(c.GlobalString("registry")),
+		registry:       newHttpRegistry(c),
 		testSpec:       c.String("test-spec"),
 		dockerEndpoint: c.GlobalString("docker-endpoint"),
 	}
@@ -82,14 +86,20 @@ var verifyCmd = cli.Command{
 			Value: "test_spec.json",
 			Usage: "Set path to test spec file",
 		},
+		cli.BoolFlag{
+			Name:  "authenticate",
+			Usage: "Authenticates the user against the configured OAuth2 provider",
+		},
 	},
 }
 
 // Verifies the docker image produced by the build command against the test
 // spec.
 func verifyImage(c *cli.Context) error {
+	registry := newHttpRegistry(c)
+
 	pazuzu := Pazuzu{
-		registry:       HttpRegistry(c.GlobalString("registry")),
+		registry:       registry,
 		testSpec:       c.String("test-spec"),
 		dockerEndpoint: c.GlobalString("docker-endpoint"),
 	}
@@ -111,12 +121,16 @@ var searchCmd = cli.Command{
 			Name:  "q",
 			Usage: "only print feature names",
 		},
+		cli.BoolFlag{
+			Name:  "authenticate",
+			Usage: "Authenticates the user against the configured OAuth2 provider",
+		},
 	},
 }
 
 // search features by name.
 func searchFeatures(c *cli.Context) error {
-	registry := HttpRegistry(c.GlobalString("registry"))
+	registry := newHttpRegistry(c)
 
 	features, err := registry.SearchFeatures(c.Args().First())
 	if err != nil {
@@ -143,12 +157,16 @@ var listCmd = cli.Command{
 			Name:  "q",
 			Usage: "only print feature names",
 		},
+		cli.BoolFlag{
+			Name:  "authenticate",
+			Usage: "Authenticates the user against the configured OAuth2 provider",
+		},
 	},
 }
 
 // list all features in registry.
 func listFeatures(c *cli.Context) error {
-	registry := HttpRegistry(c.GlobalString("registry"))
+	registry := newHttpRegistry(c)
 
 	features, err := registry.ListFeatures()
 	if err != nil {
@@ -160,6 +178,14 @@ func listFeatures(c *cli.Context) error {
 	}
 
 	return nil
+}
+
+func newHttpRegistry(c *cli.Context) HttpRegistry {
+	var authenticator Authenticator = nil
+	if c.Bool("authenticate") {
+		authenticator = NewOAuth2Authenticator(c.GlobalString("tokeninfo-endpoint"))
+	}
+	return HttpRegistry{Url: c.GlobalString("registry"), Authenticator: authenticator}
 }
 
 func formatFeature(feature Feature, c *cli.Context) {
@@ -192,6 +218,11 @@ func main() {
 			Value:  "http://localhost:8080/api",
 			Usage:  "Set the registry URL",
 			EnvVar: "PAZUZU_REGISTRY",
+		},
+		cli.StringFlag{
+			Name:  "tokeninfo-endpoint, t",
+			Value: "https://token.auth.zalando.com/access_token",
+			Usage: "Sets the OAuth2 token info URL",
 		},
 	}
 
